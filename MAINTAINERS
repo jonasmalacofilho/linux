@@ -12919,6 +12919,13 @@ S:	Maintained
 F:	Documentation/hwmon/nzxt-kraken2.rst
 F:	drivers/hwmon/nzxt-kraken2.c
 
+NZXT-SMARTDEVICE HARDWARE MONITORING DRIVER
+M:	Jonas Malaco <jonas@protocubo.io>
+L:	linux-hwmon@vger.kernel.org
+S:	Maintained
+F:	Documentation/hwmon/nzxt-smartdevice.rst
+F:	drivers/hwmon/nzxt-smartdevice.c
+
 OBJAGG
 M:	Jiri Pirko <jiri@nvidia.com>
 L:	netdev@vger.kernel.org
