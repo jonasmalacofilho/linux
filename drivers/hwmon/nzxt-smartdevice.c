@@ -64,19 +64,19 @@ module_param(noinit, bool, 0444);
 MODULE_PARM_DESC(noinit, "do not run initialization routines (testing only)");
 
 /**
- * smartdevice_fan_type - Fan type.
- * @smartdevice_no_fan:		No fan or fan does not support sense.
- * @smartdevice_dc_fan:		Variable-DC-controllable fan.
- * @smartdevice_pwm_fan:	PWM-controllable fan.
+ * grid3_fan_type - Fan type.
+ * @grid3_no_fan:	No fan or fan does not support sense.
+ * @grid3_dc_fan:	Variable-DC-controllable fan.
+ * @grid3_pwm_fan:	PWM-controllable fan.
  */
-enum __packed smartdevice_fan_type {
-	smartdevice_no_fan,
-	smartdevice_dc_fan,
-	smartdevice_pwm_fan,
+enum __packed grid3_fan_type {
+	grid3_no_fan,
+	grid3_dc_fan,
+	grid3_pwm_fan,
 };
 
 /**
- * smartdevice_channel_status - Last known data for a given channel.
+ * grid3_channel_status - Last known data for a given channel.
  * @rpms:	Fan speed in rpm.
  * @centiamps:	Fan current draw in centiamperes.
  * @centivolts:	Fan supply voltage in centivolts.
@@ -87,17 +87,17 @@ enum __packed smartdevice_fan_type {
  * Current and voltage are stored in centiamperes and centivolts to save some
  * space.
  */
-struct smartdevice_channel_status {
+struct grid3_channel_status {
 	u16 rpms;
 	u16 centiamps;
 	u16 centivolts;
 	u8 pwm;
-	enum smartdevice_fan_type type;
+	enum grid3_fan_type type;
 	unsigned long updated;
 };
 
 /**
- * smartdevice_priv_data - Driver private data.
+ * grid3_data - Driver private data.
  * @hid_dev:	HID device.
  * @hwmon_dev:	HWMON device.
  * @lock:	Protects the output buffer @out and writes to @status[].pwm.
@@ -105,7 +105,7 @@ struct smartdevice_channel_status {
  * @channels:	Number of channels.
  * @status:	Last known status for each channel.
  */
-struct smartdevice_priv_data {
+struct grid3_data {
 	struct hid_device *hid_dev;
 	struct device *hwmon_dev;
 
@@ -113,14 +113,13 @@ struct smartdevice_priv_data {
 	u8 out[8];
 
 	int channels;
-	struct smartdevice_channel_status status[];
+	struct grid3_channel_status status[];
 };
 
-static umode_t smartdevice_is_visible(const void *data,
-				      enum hwmon_sensor_types type,
-				      u32 attr, int channel)
+static umode_t grid3_is_visible(const void *data, enum hwmon_sensor_types type,
+				u32 attr, int channel)
 {
-	const struct smartdevice_priv_data *priv = data;
+	const struct grid3_data *priv = data;
 
 	if (channel >= priv->channels)
 		return 0;
@@ -144,15 +143,14 @@ static umode_t smartdevice_is_visible(const void *data,
 	}
 }
 
-static int smartdevice_read_pwm(struct smartdevice_channel_status *channel,
-				u32 attr, long *val)
+static int grid3_read_pwm(struct grid3_channel_status *channel, u32 attr, long *val)
 {
 	switch (attr) {
 	case hwmon_pwm_input:
 		*val = channel->pwm;
 		break;
 	case hwmon_pwm_mode:
-		*val = channel->type != smartdevice_dc_fan;
+		*val = channel->type != grid3_dc_fan;
 		break;
 	default:
 		return -EOPNOTSUPP;
@@ -161,10 +159,10 @@ static int smartdevice_read_pwm(struct smartdevice_channel_status *channel,
 	return 0;
 }
 
-static int smartdevice_read(struct device *dev, enum hwmon_sensor_types type,
-			    u32 attr, int channel, long *val)
+static int grid3_read(struct device *dev, enum hwmon_sensor_types type, u32 attr,
+		      int channel, long *val)
 {
-	struct smartdevice_priv_data *priv = dev_get_drvdata(dev);
+	struct grid3_data *priv = dev_get_drvdata(dev);
 	unsigned long expires;
 
 	expires = priv->status[channel].updated + STATUS_VALIDITY * HZ;
@@ -183,7 +181,7 @@ static int smartdevice_read(struct device *dev, enum hwmon_sensor_types type,
 		*val = priv->status[channel].centivolts * 10;
 		break;
 	case hwmon_pwm:
-		return smartdevice_read_pwm(&priv->status[channel], attr, val);
+		return grid3_read_pwm(&priv->status[channel], attr, val);
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -191,8 +189,7 @@ static int smartdevice_read(struct device *dev, enum hwmon_sensor_types type,
 	return 0;
 }
 
-static int smartdevice_write_pwm_with_lock(struct smartdevice_priv_data *priv,
-					   int channel, long val)
+static int grid3_write_pwm_assume_locked(struct grid3_data *priv, int channel, long val)
 {
 	int ret;
 
@@ -219,29 +216,28 @@ static int smartdevice_write_pwm_with_lock(struct smartdevice_priv_data *priv,
 	return 0;
 }
 
-static int smartdevice_write_pwm_input(struct device *dev,
-				       enum hwmon_sensor_types type,
-				       u32 attr, int channel, long val)
+static int grid3_write_pwm_input(struct device *dev, enum hwmon_sensor_types type,
+				 u32 attr, int channel, long val)
 {
-	struct smartdevice_priv_data *priv = dev_get_drvdata(dev);
+	struct grid3_data *priv = dev_get_drvdata(dev);
 	int ret;
 
 	if (mutex_lock_interruptible(&priv->lock))
 		return -ERESTARTSYS;
 
-	ret = smartdevice_write_pwm_with_lock(priv, channel, val);
+	ret = grid3_write_pwm_assume_locked(priv, channel, val);
 
 	mutex_unlock(&priv->lock);
 	return ret;
 }
 
-static const struct hwmon_ops smartdevice_hwmon_ops = {
-	.is_visible = smartdevice_is_visible,
-	.read = smartdevice_read,
-	.write = smartdevice_write_pwm_input,
+static const struct hwmon_ops grid3_hwmon_ops = {
+	.is_visible = grid3_is_visible,
+	.read = grid3_read,
+	.write = grid3_write_pwm_input,
 };
 
-static const struct hwmon_channel_info *smartdevice_info[] = {
+static const struct hwmon_channel_info *grid3_info[] = {
 	HWMON_CHANNEL_INFO(fan,
 			   HWMON_F_INPUT,
 			   HWMON_F_INPUT,
@@ -273,14 +269,15 @@ static const struct hwmon_channel_info *smartdevice_info[] = {
 	NULL
 };
 
-static const struct hwmon_chip_info smartdevice_chip_info = {
-	.ops = &smartdevice_hwmon_ops,
-	.info = smartdevice_info,
+static const struct hwmon_chip_info grid3_chip_info = {
+	.ops = &grid3_hwmon_ops,
+	.info = grid3_info,
 };
 
-static int smartdevice_raw_event(struct hid_device *hdev, struct hid_report *report, u8 *data, int size)
+static int grid3_raw_event(struct hid_device *hdev, struct hid_report *report,
+			   u8 *data, int size)
 {
-	struct smartdevice_priv_data *priv;
+	struct grid3_data *priv;
 	int channel;
 
 	if (size < 16 || report->id != REPORT_STATUS)
@@ -303,7 +300,7 @@ static int smartdevice_raw_event(struct hid_device *hdev, struct hid_report *rep
 	return 0;
 }
 
-static int smartdevice_req_init(struct hid_device *hdev, u8 *buf)
+static int grid3_req_init(struct hid_device *hdev, u8 *buf)
 {
 	u8 cmds[2] = {REQ_INIT_DETECT, REQ_INIT_OPEN};
 	int i, ret;
@@ -325,11 +322,11 @@ static int smartdevice_req_init(struct hid_device *hdev, u8 *buf)
 	return 0;
 }
 
-static int smartdevice_driver_init_with_lock(struct smartdevice_priv_data *priv)
+static int grid3_driver_init_assume_locked(struct grid3_data *priv)
 {
 	int i, ret;
 
-	ret = smartdevice_req_init(priv->hid_dev, priv->out);
+	ret = grid3_req_init(priv->hid_dev, priv->out);
 	if (ret) {
 		hid_err(priv->hid_dev, "request init failed with %d\n", ret);
 		return ret;
@@ -348,7 +345,7 @@ static int smartdevice_driver_init_with_lock(struct smartdevice_priv_data *priv)
 		 * predictable behavior if the driver has been previously
 		 * unbound.
 		 */
-		ret = smartdevice_write_pwm_with_lock(priv, i, 40 * 255 / 100);
+		ret = grid3_write_pwm_assume_locked(priv, i, 40 * 255 / 100);
 		if (ret) {
 			hid_err(priv->hid_dev, "write pwm failed with %d\n", ret);
 			return ret;
@@ -358,16 +355,16 @@ static int smartdevice_driver_init_with_lock(struct smartdevice_priv_data *priv)
 }
 
 #ifdef CONFIG_PM
-static int smartdevice_reset_resume(struct hid_device *hdev)
+static int grid3_reset_resume(struct hid_device *hdev)
 {
-	struct smartdevice_priv_data *priv = hid_get_drvdata(hdev);
+	struct grid3_data *priv = hid_get_drvdata(hdev);
 	int ret;
 
 	/* FIXME remove */
 	hid_info(hdev, "(reset_resume) requesting new initialization");
 
 	mutex_lock(&priv->lock);
-	ret = smartdevice_driver_init_with_lock(priv);
+	ret = grid3_driver_init_assume_locked(priv);
 	mutex_unlock(&priv->lock);
 
 	if (ret)
@@ -377,17 +374,16 @@ static int smartdevice_reset_resume(struct hid_device *hdev)
 }
 
 /* FIXME remove */
-static int smartdevice_resume(struct hid_device *hdev)
+static int grid3_resume(struct hid_device *hdev)
 {
 	hid_info(hdev, "(resume) forwarding call to reset_resume for testing purposes");
-	return smartdevice_reset_resume(hdev);
+	return grid3_reset_resume(hdev);
 }
 #endif
 
-static int smartdevice_probe(struct hid_device *hdev,
-			     const struct hid_device_id *id)
+static int grid3_probe(struct hid_device *hdev, const struct hid_device_id *id)
 {
-	struct smartdevice_priv_data *priv;
+	struct grid3_data *priv;
 	char *hwmon_name;
 	int channels, ret;
 
@@ -405,7 +401,7 @@ static int smartdevice_probe(struct hid_device *hdev,
 	}
 
 	/* FIXME remove */
-	hid_info(hdev, "smartdevice_priv_data: %ld bytes, mutex: %ld bytes\n",
+	hid_info(hdev, "grid3_data: %ld bytes, mutex: %ld bytes\n",
 		 struct_size(priv, status, channels), sizeof(struct mutex));
 
 	priv = devm_kzalloc(&hdev->dev, struct_size(priv, status, channels), GFP_KERNEL);
@@ -439,14 +435,14 @@ static int smartdevice_probe(struct hid_device *hdev,
 		goto fail_but_close;
 	}
 
-	ret = smartdevice_driver_init_with_lock(priv);
+	ret = grid3_driver_init_assume_locked(priv);
 	if (ret) {
 		hid_err(hdev, "driver init failed with %d\n", ret);
 		goto fail_but_close;
 	}
 
 	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, hwmon_name,
-							  priv, &smartdevice_chip_info,
+							  priv, &grid3_chip_info,
 							  NULL);
 	if (IS_ERR(priv->hwmon_dev)) {
 		ret = PTR_ERR(priv->hwmon_dev);
@@ -465,9 +461,9 @@ fail_but_destroy:
 	return ret;
 }
 
-static void smartdevice_remove(struct hid_device *hdev)
+static void grid3_remove(struct hid_device *hdev)
 {
-	struct smartdevice_priv_data *priv = hid_get_drvdata(hdev);
+	struct grid3_data *priv = hid_get_drvdata(hdev);
 
 	hwmon_device_unregister(priv->hwmon_dev);
 
@@ -477,41 +473,41 @@ static void smartdevice_remove(struct hid_device *hdev)
 	mutex_destroy(&priv->lock);
 }
 
-static const struct hid_device_id smartdevice_table[] = {
+static const struct hid_device_id grid3_table[] = {
 	{ HID_USB_DEVICE(VID_NZXT, PID_GRIDPLUS3) },
 	{ HID_USB_DEVICE(VID_NZXT, PID_SMARTDEVICE) },
 	{ }
 };
 
-MODULE_DEVICE_TABLE(hid, smartdevice_table);
+MODULE_DEVICE_TABLE(hid, grid3_table);
 
-static struct hid_driver smartdevice_driver = {
+static struct hid_driver grid3_driver = {
 	.name = "nzxt-smartdevice",
-	.id_table = smartdevice_table,
-	.probe = smartdevice_probe,
-	.remove = smartdevice_remove,
-	.raw_event = smartdevice_raw_event,
+	.id_table = grid3_table,
+	.probe = grid3_probe,
+	.remove = grid3_remove,
+	.raw_event = grid3_raw_event,
 #ifdef CONFIG_PM
-	.reset_resume = smartdevice_reset_resume,
-	.resume = smartdevice_resume, /* FIXME remove */
+	.reset_resume = grid3_reset_resume,
+	.resume = grid3_resume, /* FIXME remove */
 #endif
 };
 
-static int __init smartdevice_init(void)
+static int __init grid3_init(void)
 {
-	return hid_register_driver(&smartdevice_driver);
+	return hid_register_driver(&grid3_driver);
 }
 
-static void __exit smartdevice_exit(void)
+static void __exit grid3_exit(void)
 {
-	hid_unregister_driver(&smartdevice_driver);
+	hid_unregister_driver(&grid3_driver);
 }
 
 /*
  * When compiled into the kernel, initialize after the hid bus.
  */
-late_initcall(smartdevice_init);
-module_exit(smartdevice_exit);
+late_initcall(grid3_init);
+module_exit(grid3_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jonas Malaco <jonas@protocubo.io>");
