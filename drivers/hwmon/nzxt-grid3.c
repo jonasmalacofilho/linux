@@ -34,6 +34,7 @@
  */
 
 #include <asm/unaligned.h>
+#include <linux/bitops.h>
 #include <linux/errno.h>
 #include <linux/hid.h>
 #include <linux/hwmon.h>
@@ -56,17 +57,8 @@
 #define REPORT_CONFIG		0x02
 #define CONFIG_FAN_PWM		0x4d
 
-/**
- * grid3_fan_type - Fan type.
- * @grid3_no_fan:	No fan or fan does not support sense.
- * @grid3_dc_fan:	Variable-DC-controllable fan.
- * @grid3_pwm_fan:	PWM-controllable fan.
- */
-enum __packed grid3_fan_type {
-	grid3_no_fan,
-	grid3_dc_fan,
-	grid3_pwm_fan,
-};
+#define DC_FAN			BIT(0)
+#define PWM_FAN			BIT(1)
 
 /**
  * grid3_channel_status - Last known data for a given channel.
@@ -74,7 +66,7 @@ enum __packed grid3_fan_type {
  * @centiamps:	Fan current draw in centiamperes.
  * @centivolts:	Fan supply voltage in centivolts.
  * @pwm:	Fan PWM value (last set value, device does not report it).
- * @type:	Fan type (no fan, DC, PWM).
+ * @fan_type:	Fan type (no fan, DC, PWM).
  * @updated:	Last update in jiffies.
  *
  * Centiamperes and centivolts are used to save some space.
@@ -84,7 +76,7 @@ struct grid3_channel_status {
 	u16 centiamps;
 	u16 centivolts;
 	u8 pwm;
-	enum grid3_fan_type type;
+	u8 fan_type;
 	unsigned long updated;
 };
 
@@ -135,17 +127,17 @@ static umode_t grid3_is_visible(const void *data, enum hwmon_sensor_types type,
 	}
 }
 
-static int grid3_read_pwm(struct grid3_channel_status *channel, u32 attr, long *val)
+static int grid3_read_pwm(struct grid3_data *priv, u32 attr, int channel, long *val)
 {
 	switch (attr) {
 	case hwmon_pwm_input:
-		*val = channel->pwm;
+		*val = priv->status[channel].pwm;
 		break;
 	case hwmon_pwm_mode:
 		/*
 		 * For fan control, the device treats undetected == PWM.
 		 */
-		*val = channel->type != grid3_dc_fan;
+		*val = priv->status[channel].fan_type != DC_FAN;
 		break;
 	default:
 		return -EOPNOTSUPP;
@@ -161,7 +153,6 @@ static int grid3_read(struct device *dev, enum hwmon_sensor_types type, u32 attr
 	unsigned long expires;
 
 	expires = priv->status[channel].updated + STATUS_VALIDITY * HZ;
-
 	if (time_after(jiffies, expires))
 		return -ENODATA;
 
@@ -176,7 +167,7 @@ static int grid3_read(struct device *dev, enum hwmon_sensor_types type, u32 attr
 		*val = priv->status[channel].centivolts * 10;
 		break;
 	case hwmon_pwm:
-		return grid3_read_pwm(&priv->status[channel], attr, val);
+		return grid3_read_pwm(priv, attr, channel, val);
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -292,7 +283,7 @@ static int grid3_raw_event(struct hid_device *hdev, struct hid_report *report,
 	priv->status[channel].rpms = get_unaligned_be16(data + 3);
 	priv->status[channel].centiamps = data[9] * 100 + data[10];
 	priv->status[channel].centivolts = data[7] * 100 + data[8];
-	priv->status[channel].type = data[15] & 0x3;
+	priv->status[channel].fan_type = data[15] & 0x3;
 
 	priv->status[channel].updated = jiffies;
 
