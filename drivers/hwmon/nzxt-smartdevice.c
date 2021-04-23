@@ -35,6 +35,7 @@
  */
 
 #include <asm/unaligned.h>
+#include <linux/errno.h>
 #include <linux/hid.h>
 #include <linux/hwmon.h>
 #include <linux/jiffies.h>
@@ -229,28 +230,34 @@ static int smartdevice_write(struct device *dev, enum hwmon_sensor_types type,
 	struct smartdevice_priv_data *priv = dev_get_drvdata(dev);
 	int ret;
 
-	/*
-	 * We allow write attempts to not break pwmconfig (FIXME &fancontrol?),
-	 * but these are not actually supported by the device.
-	 */
-	if (attr == hwmon_pwm_enable)
-		return 0;
-
-	/*
-	 * We know that the device wont honor changes to a fan channel it
-	 * thinks is unconnected.
-	 */
-	if (priv->status[channel].mode == smartdevice_no_control)
+	switch (attr) {
+	case hwmon_pwm_enable:
+		/*
+		 * Partially support writes to pwm_enable for lm-sensors'
+		 * pwmconfig/fancontrol.
+		 */
+		if (val == (priv->status[channel].mode != smartdevice_no_control))
+			return 0;
 		return -EOPNOTSUPP;
+	case hwmon_pwm_input:
+		/*
+		 * We know that the device will not honor changes to a fan
+		 * channel it thinks is unconnected.
+		 */
+		if (priv->status[channel].mode == smartdevice_no_control)
+			return -EOPNOTSUPP;
 
-	if (mutex_lock_interruptible(&priv->lock))
-		return -EINTR;
+		if (mutex_lock_interruptible(&priv->lock))
+			return -ERESTARTSYS;
 
-	ret = smartdevice_write_pwm_with_lock(priv, channel, val);
+		ret = smartdevice_write_pwm_with_lock(priv, channel, val);
 
-	mutex_unlock(&priv->lock);
+		mutex_unlock(&priv->lock);
 
-	return ret;
+		return ret;
+	default:
+		return -EOPNOTSUPP;
+	}
 }
 
 static const struct hwmon_ops smartdevice_hwmon_ops = {
