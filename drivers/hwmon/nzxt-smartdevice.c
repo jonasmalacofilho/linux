@@ -138,10 +138,10 @@ static umode_t smartdevice_is_visible(const void *data,
 		case hwmon_pwm_mode:
 			return 0444;
 		default:
-			return 0; /* unreachable */
+			return 0;
 		}
 	default:
-		return 0; /* unreachable */
+		return 0;
 	}
 }
 
@@ -159,7 +159,7 @@ static int smartdevice_read_pwm(struct smartdevice_channel_data *channel,
 		*val = channel->mode != smartdevice_dc_control;
 		break;
 	default:
-		return -EOPNOTSUPP; /* unreachable */
+		return -EOPNOTSUPP;
 	}
 
 	return 0;
@@ -189,7 +189,7 @@ static int smartdevice_read(struct device *dev, enum hwmon_sensor_types type,
 	case hwmon_pwm:
 		return smartdevice_read_pwm(&priv->status[channel], attr, val);
 	default:
-		return -EOPNOTSUPP; /* unreachable */
+		return -EOPNOTSUPP;
 	}
 
 	return 0;
