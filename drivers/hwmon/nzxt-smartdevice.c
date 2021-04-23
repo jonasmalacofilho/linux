@@ -64,36 +64,35 @@ module_param(noinit, bool, 0444);
 MODULE_PARM_DESC(noinit, "do not run initialization routines (testing only)");
 
 /**
- * smartdevice_fan_mode - Device fan control mode.
- * @smartdevice_no_control:	Control is disabled, typically means no fan has
- *				been detected on the channel.
- * @smartdevice_dc_control:	Control is enabled, mode is DC.
- * @smartdevice_pwm_control:	Control is enabled, mode is PWM.
+ * smartdevice_fan_type - Fan type.
+ * @smartdevice_no_fan:		No fan or fan does not support sense.
+ * @smartdevice_dc_fan:		Variable-DC-controllable fan.
+ * @smartdevice_pwm_fan:	PWM-controllable fan.
  */
-enum __packed smartdevice_fan_mode {
-	smartdevice_no_control,
-	smartdevice_dc_control,
-	smartdevice_pwm_control,
+enum __packed smartdevice_fan_type {
+	smartdevice_no_fan,
+	smartdevice_dc_fan,
+	smartdevice_pwm_fan,
 };
 
 /**
- * smartdevice_channel_data - Last known status for a given channel.
+ * smartdevice_channel_status - Last known data for a given channel.
  * @rpms:	Fan speed in rpm.
  * @centiamps:	Fan current draw in centiamperes.
  * @centivolts:	Fan supply voltage in centivolts.
  * @pwm:	Fan PWM value (last set value, device does not report it).
- * @mode:	Fan control mode (no, DC, PWM).
+ * @type:	Fan type (no fan, DC, PWM).
  * @updated:	Last update in jiffies.
  *
  * Current and voltage are stored in centiamperes and centivolts to save some
  * space.
  */
-struct smartdevice_channel_data {
+struct smartdevice_channel_status {
 	u16 rpms;
 	u16 centiamps;
 	u16 centivolts;
 	u8 pwm;
-	enum smartdevice_fan_mode mode;
+	enum smartdevice_fan_type type;
 	unsigned long updated;
 };
 
@@ -101,9 +100,9 @@ struct smartdevice_channel_data {
  * smartdevice_priv_data - Driver private data.
  * @hid_dev:	HID device.
  * @hwmon_dev:	HWMON device.
- * @lock:	Protects the output buffer @out, and writes to @status[].pwm.
- * @out:	DMA-safe output buffer for HID writes.
- * @cha_cnt:	Number of channels.
+ * @lock:	Protects the output buffer @out and writes to @status[].pwm.
+ * @out:	DMA-safe output buffer for HID output reports.
+ * @channels:	Number of channels.
  * @status:	Last known status for each channel.
  */
 struct smartdevice_priv_data {
@@ -113,8 +112,8 @@ struct smartdevice_priv_data {
 	struct mutex lock; /* see comment above */
 	u8 out[8];
 
-	int cha_cnt;
-	struct smartdevice_channel_data status[];
+	int channels;
+	struct smartdevice_channel_status status[];
 };
 
 static umode_t smartdevice_is_visible(const void *data,
@@ -123,7 +122,7 @@ static umode_t smartdevice_is_visible(const void *data,
 {
 	const struct smartdevice_priv_data *priv = data;
 
-	if (channel >= priv->cha_cnt)
+	if (channel >= priv->channels)
 		return 0;
 
 	switch (type) {
@@ -145,7 +144,7 @@ static umode_t smartdevice_is_visible(const void *data,
 	}
 }
 
-static int smartdevice_read_pwm(struct smartdevice_channel_data *channel,
+static int smartdevice_read_pwm(struct smartdevice_channel_status *channel,
 				u32 attr, long *val)
 {
 	switch (attr) {
@@ -153,7 +152,7 @@ static int smartdevice_read_pwm(struct smartdevice_channel_data *channel,
 		*val = channel->pwm;
 		break;
 	case hwmon_pwm_mode:
-		*val = channel->mode != smartdevice_dc_control;
+		*val = channel->type != smartdevice_dc_fan;
 		break;
 	default:
 		return -EOPNOTSUPP;
@@ -279,8 +278,7 @@ static const struct hwmon_chip_info smartdevice_chip_info = {
 	.info = smartdevice_info,
 };
 
-static int smartdevice_raw_event(struct hid_device *hdev,
-				 struct hid_report *report, u8 *data, int size)
+static int smartdevice_raw_event(struct hid_device *hdev, struct hid_report *report, u8 *data, int size)
 {
 	struct smartdevice_priv_data *priv;
 	int channel;
@@ -292,13 +290,13 @@ static int smartdevice_raw_event(struct hid_device *hdev,
 
 	channel = data[15] >> 4;
 
-	if (channel > priv->cha_cnt)
+	if (channel > priv->channels)
 		return 0;
 
 	priv->status[channel].rpms = get_unaligned_be16(data + 3);
 	priv->status[channel].centiamps = data[9] * 100 + data[10];
 	priv->status[channel].centivolts = data[7] * 100 + data[8];
-	priv->status[channel].mode = data[15] & 0x3;
+	priv->status[channel].type = data[15] & 0x3;
 
 	priv->status[channel].updated = jiffies;
 
@@ -337,7 +335,7 @@ static int smartdevice_driver_init_with_lock(struct smartdevice_priv_data *priv)
 		return ret;
 	}
 
-	for (i = 0; i < priv->cha_cnt; i++) {
+	for (i = 0; i < priv->channels; i++) {
 		/*
 		 * Initialize ->updated to STATUS_VALIDITY seconds in the past,
 		 * making the initial empty data invalid for smartdevice_read
@@ -391,15 +389,15 @@ static int smartdevice_probe(struct hid_device *hdev,
 {
 	struct smartdevice_priv_data *priv;
 	char *hwmon_name;
-	int cha_cnt, ret;
+	int channels, ret;
 
 	switch (id->product) {
 	case PID_GRIDPLUS3:
-		cha_cnt = 6;
+		channels = 6;
 		hwmon_name = "gridplus3";
 		break;
 	case PID_SMARTDEVICE:
-		cha_cnt = 3;
+		channels = 3;
 		hwmon_name = "smartdevice";
 		break;
 	default:
@@ -408,14 +406,14 @@ static int smartdevice_probe(struct hid_device *hdev,
 
 	/* FIXME remove */
 	hid_info(hdev, "smartdevice_priv_data: %ld bytes, mutex: %ld bytes\n",
-		 struct_size(priv, status, cha_cnt), sizeof(struct mutex));
+		 struct_size(priv, status, channels), sizeof(struct mutex));
 
-	priv = devm_kzalloc(&hdev->dev, struct_size(priv, status, cha_cnt), GFP_KERNEL);
+	priv = devm_kzalloc(&hdev->dev, struct_size(priv, status, channels), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
 
 	priv->hid_dev = hdev;
-	priv->cha_cnt = cha_cnt;
+	priv->channels = channels;
 	mutex_init(&priv->lock);
 
 	hid_set_drvdata(hdev, priv);
