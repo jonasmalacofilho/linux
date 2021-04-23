@@ -150,6 +150,9 @@ static int grid3_read_pwm(struct grid3_channel_status *channel, u32 attr, long *
 		*val = channel->pwm;
 		break;
 	case hwmon_pwm_mode:
+		/*
+		 * The device treats undetected == PWM for PWM control.
+		 */
 		*val = channel->type != grid3_dc_fan;
 		break;
 	default:
@@ -189,6 +192,10 @@ static int grid3_read(struct device *dev, enum hwmon_sensor_types type, u32 attr
 	return 0;
 }
 
+/*
+ * Caller must hold priv->lock or otherwise ensure exclusive access to
+ * priv->out and priv->status[*].pwm.
+ */
 static int grid3_write_pwm_assume_locked(struct grid3_data *priv, int channel, long val)
 {
 	int ret;
@@ -322,6 +329,10 @@ static int grid3_req_init(struct hid_device *hdev, u8 *buf)
 	return 0;
 }
 
+/*
+ * Caller must hold priv->lock or otherwise ensure exclusive access to
+ * priv->out and priv->status[*].pwm.
+ */
 static int grid3_driver_init_assume_locked(struct grid3_data *priv)
 {
 	int i, ret;
@@ -335,15 +346,15 @@ static int grid3_driver_init_assume_locked(struct grid3_data *priv)
 	for (i = 0; i < priv->channels; i++) {
 		/*
 		 * Initialize ->updated to STATUS_VALIDITY seconds in the past,
-		 * making the initial empty data invalid for smartdevice_read
+		 * making the initial empty data invalid for grid3_read
 		 * without the need for a special case there.
 		 */
 		priv->status[i].updated = jiffies - STATUS_VALIDITY * HZ;
 
 		/*
-		 * Mimic the device upon true initialization and ensure
-		 * predictable behavior if the driver has been previously
-		 * unbound.
+		 * Mimic the behavior of the device after being powered on,
+		 * ensuring predictable behavior if the driver has been
+		 * previously removed.
 		 */
 		ret = grid3_write_pwm_assume_locked(priv, i, 40 * 255 / 100);
 		if (ret) {
@@ -435,6 +446,10 @@ static int grid3_probe(struct hid_device *hdev, const struct hid_device_id *id)
 		goto fail_but_close;
 	}
 
+	/*
+	 * Concurrent access to priv->out or priv->status[*].pwm is not
+	 * possible yet.
+	 */
 	ret = grid3_driver_init_assume_locked(priv);
 	if (ret) {
 		hid_err(hdev, "driver init failed with %d\n", ret);
