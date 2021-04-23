@@ -1,7 +1,7 @@
 .. SPDX-License-Identifier: GPL-2.0-or-later
 
-Kernel driver nzxt-smartdevice
-==============================
+Kernel driver nzxt-grid3
+========================
 
 Supported devices:
 

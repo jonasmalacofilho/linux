@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * nzxt-smartdevice.c - hwmon driver for NZXT Smart Device (V1) and Grid+ V3
+ * nzxt-grid3.c - hwmon driver for NZXT Grid+ V3 and Smart Device (V1)
  *
  * The device asynchronously sends HID reports five times a second to
  * communicate fan speed, current, voltage and control mode.  It does not
@@ -497,7 +497,7 @@ static const struct hid_device_id grid3_table[] = {
 MODULE_DEVICE_TABLE(hid, grid3_table);
 
 static struct hid_driver grid3_driver = {
-	.name = "nzxt-smartdevice",
+	.name = "nzxt-grid3",
 	.id_table = grid3_table,
 	.probe = grid3_probe,
 	.remove = grid3_remove,

@@ -12912,19 +12912,19 @@ L:	linux-nfc@lists.01.org (moderated for non-subscribers)
 S:	Supported
 F:	drivers/nfc/nxp-nci
 
+NZXT-GRID3 HARDWARE MONITORING DRIVER
+M:	Jonas Malaco <jonas@protocubo.io>
+L:	linux-hwmon@vger.kernel.org
+S:	Maintained
+F:	Documentation/hwmon/nzxt-grid3.rst
+F:	drivers/hwmon/nzxt-grid3.c
+
 NZXT-KRAKEN2 HARDWARE MONITORING DRIVER
 M:	Jonas Malaco <jonas@protocubo.io>
 L:	linux-hwmon@vger.kernel.org
 S:	Maintained
 F:	Documentation/hwmon/nzxt-kraken2.rst
 F:	drivers/hwmon/nzxt-kraken2.c
-
-NZXT-SMARTDEVICE HARDWARE MONITORING DRIVER
-M:	Jonas Malaco <jonas@protocubo.io>
-L:	linux-hwmon@vger.kernel.org
-S:	Maintained
-F:	Documentation/hwmon/nzxt-smartdevice.rst
-F:	drivers/hwmon/nzxt-smartdevice.c
 
 OBJAGG
 M:	Jiri Pirko <jiri@nvidia.com>

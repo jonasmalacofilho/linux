@@ -1482,6 +1482,16 @@ config SENSORS_NSA320
 	  This driver can also be built as a module. If so, the module
 	  will be called nsa320-hwmon.
 
+config SENSORS_NZXT_GRID3
+	tristate "NZXT Grid+ V3 and Smart Device fan hubs"
+	depends on USB_HID
+	help
+	  If you say yes here you get support for hardware monitoring for the
+	  NZXT Grid+ V3 and Smart Device (V1).
+
+	  This driver can also be built as a module. If so, the module
+	  will be called nzxt-grid3.
+
 config SENSORS_NZXT_KRAKEN2
 	tristate "NZXT Kraken X42/X51/X62/X72 liquid coolers"
 	depends on USB_HID
@@ -1491,16 +1501,6 @@ config SENSORS_NZXT_KRAKEN2
 
 	  This driver can also be built as a module. If so, the module
 	  will be called nzxt-kraken2.
-
-config SENSORS_NZXT_SMARTDEVICE
-	tristate "NZXT Smart Device and Grid+ V3 fan hubs"
-	depends on USB_HID
-	help
-	  If you say yes here you get support for hardware monitoring for the
-	  NZXT Smart Device (V1) and Grid+ V3 fan hubs.
-
-	  This driver can also be built as a module. If so, the module
-	  will be called nzxt-smartdevice.
 
 source "drivers/hwmon/occ/Kconfig"
 
