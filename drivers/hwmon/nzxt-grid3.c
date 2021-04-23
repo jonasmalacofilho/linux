@@ -7,8 +7,7 @@
  * respond to Get_Report or honor Set_Idle requests for this status report.
  *
  * Fan speeds can be controlled through output HID reports, but duty cycles
- * cannot be read back from the device.  The Smart Device has three fan
- * channels, while the Grid+ V3 has six.
+ * cannot be read back from the device.
  *
  * A special initialization routine causes the device to detect the fan
  * channels in use and their appropriate control mode (DC or PWM); once
@@ -25,8 +24,8 @@
  * - for channels in use, the control mode has been detected and PWM changes
  *   are honored;
  * - for channels that were not detected as in use, fan speeds, current and
- *   voltage are still measured, but control is disabled and PWM changes are
- *   ignored.
+ *   voltage are still measured, and PWM changes are still accepted even though
+ *   they have no immediate effect.
  *
  * Control mode and PWM settings only persist as long as the USB device is
  * connected and powered on.
@@ -78,8 +77,7 @@ enum __packed grid3_fan_type {
  * @type:	Fan type (no fan, DC, PWM).
  * @updated:	Last update in jiffies.
  *
- * Current and voltage are stored in centiamperes and centivolts to save some
- * space.
+ * Centiamperes and centivolts are used to save some space.
  */
 struct grid3_channel_status {
 	u16 rpms;
@@ -145,7 +143,7 @@ static int grid3_read_pwm(struct grid3_channel_status *channel, u32 attr, long *
 		break;
 	case hwmon_pwm_mode:
 		/*
-		 * The device treats undetected == PWM for PWM control.
+		 * For fan control, the device treats undetected == PWM.
 		 */
 		*val = channel->type != grid3_dc_fan;
 		break;
