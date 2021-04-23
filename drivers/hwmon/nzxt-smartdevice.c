@@ -134,7 +134,6 @@ static umode_t smartdevice_is_visible(const void *data,
 	case hwmon_pwm:
 		switch (attr) {
 		case hwmon_pwm_input:
-		case hwmon_pwm_enable:
 			return 0644;
 		case hwmon_pwm_mode:
 			return 0444;
@@ -152,9 +151,6 @@ static int smartdevice_read_pwm(struct smartdevice_channel_data *channel,
 	switch (attr) {
 	case hwmon_pwm_input:
 		*val = channel->pwm;
-		break;
-	case hwmon_pwm_enable:
-		*val = channel->mode != smartdevice_no_control;
 		break;
 	case hwmon_pwm_mode:
 		*val = channel->mode != smartdevice_dc_control;
@@ -224,46 +220,26 @@ static int smartdevice_write_pwm_with_lock(struct smartdevice_priv_data *priv,
 	return 0;
 }
 
-static int smartdevice_write(struct device *dev, enum hwmon_sensor_types type,
-			     u32 attr, int channel, long val)
+static int smartdevice_write_pwm_input(struct device *dev,
+				       enum hwmon_sensor_types type,
+				       u32 attr, int channel, long val)
 {
 	struct smartdevice_priv_data *priv = dev_get_drvdata(dev);
 	int ret;
 
-	switch (attr) {
-	case hwmon_pwm_enable:
-		/*
-		 * Partially support writes to pwm_enable for lm-sensors'
-		 * pwmconfig/fancontrol.
-		 */
-		if (val == (priv->status[channel].mode != smartdevice_no_control))
-			return 0;
-		return -EOPNOTSUPP;
-	case hwmon_pwm_input:
-		/*
-		 * We know that the device will not honor changes to a fan
-		 * channel it thinks is unconnected.
-		 */
-		if (priv->status[channel].mode == smartdevice_no_control)
-			return -EOPNOTSUPP;
+	if (mutex_lock_interruptible(&priv->lock))
+		return -ERESTARTSYS;
 
-		if (mutex_lock_interruptible(&priv->lock))
-			return -ERESTARTSYS;
+	ret = smartdevice_write_pwm_with_lock(priv, channel, val);
 
-		ret = smartdevice_write_pwm_with_lock(priv, channel, val);
-
-		mutex_unlock(&priv->lock);
-
-		return ret;
-	default:
-		return -EOPNOTSUPP;
-	}
+	mutex_unlock(&priv->lock);
+	return ret;
 }
 
 static const struct hwmon_ops smartdevice_hwmon_ops = {
 	.is_visible = smartdevice_is_visible,
 	.read = smartdevice_read,
-	.write = smartdevice_write,
+	.write = smartdevice_write_pwm_input,
 };
 
 static const struct hwmon_channel_info *smartdevice_info[] = {
@@ -289,12 +265,12 @@ static const struct hwmon_channel_info *smartdevice_info[] = {
 			   HWMON_I_INPUT,
 			   HWMON_I_INPUT),
 	HWMON_CHANNEL_INFO(pwm,
-			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE | HWMON_PWM_MODE,
-			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE | HWMON_PWM_MODE,
-			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE | HWMON_PWM_MODE,
-			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE | HWMON_PWM_MODE,
-			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE | HWMON_PWM_MODE,
-			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE | HWMON_PWM_MODE),
+			   HWMON_PWM_INPUT | HWMON_PWM_MODE,
+			   HWMON_PWM_INPUT | HWMON_PWM_MODE,
+			   HWMON_PWM_INPUT | HWMON_PWM_MODE,
+			   HWMON_PWM_INPUT | HWMON_PWM_MODE,
+			   HWMON_PWM_INPUT | HWMON_PWM_MODE,
+			   HWMON_PWM_INPUT | HWMON_PWM_MODE),
 	NULL
 };
 
