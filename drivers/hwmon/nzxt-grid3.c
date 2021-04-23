@@ -57,12 +57,6 @@
 #define REPORT_CONFIG		0x02
 #define CONFIG_FAN_PWM		0x4d
 
-/* TODO remove, only used for testing */
-#include <linux/moduleparam.h>
-static bool noinit;
-module_param(noinit, bool, 0444);
-MODULE_PARM_DESC(noinit, "do not run initialization routines (testing only)");
-
 /**
  * grid3_fan_type - Fan type.
  * @grid3_no_fan:	No fan or fan does not support sense.
@@ -307,13 +301,14 @@ static int grid3_raw_event(struct hid_device *hdev, struct hid_report *report,
 	return 0;
 }
 
-static int grid3_req_init(struct hid_device *hdev, u8 *buf)
+/*
+ * Caller must hold priv->lock or otherwise ensure exclusive access to
+ * priv->out.
+ */
+static int grid3_req_init_assume_locked(struct hid_device *hdev, u8 *buf)
 {
 	u8 cmds[2] = {REQ_INIT_DETECT, REQ_INIT_OPEN};
 	int i, ret;
-
-	if (noinit)
-		return 0;
 
 	buf[0] = REPORT_REQ_INIT;
 
@@ -337,7 +332,7 @@ static int grid3_driver_init_assume_locked(struct grid3_data *priv)
 {
 	int i, ret;
 
-	ret = grid3_req_init(priv->hid_dev, priv->out);
+	ret = grid3_req_init_assume_locked(priv->hid_dev, priv->out);
 	if (ret) {
 		hid_err(priv->hid_dev, "request init failed with %d\n", ret);
 		return ret;
@@ -371,9 +366,6 @@ static int grid3_reset_resume(struct hid_device *hdev)
 	struct grid3_data *priv = hid_get_drvdata(hdev);
 	int ret;
 
-	/* FIXME remove */
-	hid_info(hdev, "(reset_resume) requesting new initialization");
-
 	mutex_lock(&priv->lock);
 	ret = grid3_driver_init_assume_locked(priv);
 	mutex_unlock(&priv->lock);
@@ -382,13 +374,6 @@ static int grid3_reset_resume(struct hid_device *hdev)
 		hid_err(hdev, "req init (reset_resume) failed with %d\n", ret);
 
 	return ret;
-}
-
-/* FIXME remove */
-static int grid3_resume(struct hid_device *hdev)
-{
-	hid_info(hdev, "(resume) forwarding call to reset_resume for testing purposes");
-	return grid3_reset_resume(hdev);
 }
 #endif
 
@@ -410,10 +395,6 @@ static int grid3_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	default:
 		return -EINVAL; /* unreachable */
 	}
-
-	/* FIXME remove */
-	hid_info(hdev, "grid3_data: %ld bytes, mutex: %ld bytes\n",
-		 struct_size(priv, status, channels), sizeof(struct mutex));
 
 	priv = devm_kzalloc(&hdev->dev, struct_size(priv, status, channels), GFP_KERNEL);
 	if (!priv)
@@ -504,7 +485,6 @@ static struct hid_driver grid3_driver = {
 	.raw_event = grid3_raw_event,
 #ifdef CONFIG_PM
 	.reset_resume = grid3_reset_resume,
-	.resume = grid3_resume, /* FIXME remove */
 #endif
 };
 
